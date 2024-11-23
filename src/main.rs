@@ -13,16 +13,16 @@ struct Uniforms {
     view_proj: [[f32; 4]; 4],
     model: [[f32; 4]; 4],
     color: [f32; 4],
+    time: f32, // Agregamos tiempo dinámico para animaciones
 }
 
 impl Uniforms {
     fn new(position: [f32; 3], color: [f32; 4], scale: f32) -> Self {
         let view = cgmath::Matrix4::look_at_rh(
-            cgmath::Point3::new(0.0, 0.0, 30.0), // Reduce Z para acercar
+            cgmath::Point3::new(0.0, 0.0, 28.0),
             cgmath::Point3::new(0.0, 0.0, 0.0),
             cgmath::Vector3::unit_y(),
         );
-        
 
         let aspect_ratio = 800.0 / 600.0;
         let fov = std::f32::consts::PI / 3.0;
@@ -38,6 +38,7 @@ impl Uniforms {
             view_proj: (proj * view).into(),
             model: (translation * cgmath::Matrix4::from_scale(scale)).into(),
             color,
+            time: 0.0, // Inicializamos el tiempo en 0
         }
     }
 }
@@ -49,6 +50,7 @@ struct Sphere {
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
     num_indices: u32,
+    uniforms: Uniforms, // Guardamos los uniforms localmente
 }
 
 struct State {
@@ -136,38 +138,37 @@ impl State {
         ];
 
         let positions = vec![
-            [-15.0, 0.0, 0.0],  // Sol
-            [-8.5, 0.0, 0.0],  // Mercurio
-            [-6.0, 0.0, 0.0],  // Venus
+            [-15.0, 0.0, 0.0], // Sol
+            [-8.5, 0.0, 0.0], // Mercurio
+            [-6.0, 0.0, 0.0], // Venus
             [-3.0, 0.0, 0.0], // Tierra
-            [0.0, 0.0, 0.0], // Marte
-            [3.0, 0.0, 0.0], // Júpiter
-            [7.0, 0.0, 0.0], // Saturno
+            [0.0, 0.0, 0.0],  // Marte
+            [3.0, 0.0, 0.0],  // Júpiter
+            [7.0, 0.0, 0.0],  // Saturno
             [10.0, 0.0, 0.0], // Urano
         ];
 
         let colors = [
-            [1.0, 0.9, 0.0, 1.0],
-            [0.5, 0.5, 1.0, 1.0],
-            [0.8, 0.5, 0.2, 1.0],
-            [0.0, 0.5, 1.0, 1.0],
-            [1.0, 0.3, 0.3, 1.0],
-            [0.3, 1.0, 0.3, 1.0],
-            [0.5, 0.2, 0.7, 1.0],
-            [0.7, 0.7, 0.7, 1.0],
+            [1.0, 0.9, 0.0, 1.0], // Sol
+            [0.5, 0.5, 1.0, 1.0], // Mercurio
+            [0.8, 0.5, 0.2, 1.0], // Venus
+            [0.0, 0.5, 1.0, 1.0], // Tierra
+            [1.0, 0.3, 0.3, 1.0], // Marte
+            [0.3, 1.0, 0.3, 1.0], // Júpiter
+            [0.5, 0.2, 0.7, 1.0], // Saturno
+            [0.7, 0.7, 0.7, 1.0], // Urano
         ];
 
         let scales = [
-    4.5, // Sol
-    0.6, // Mercurio
-    0.9, // Venus
-    1.05, // Tierra
-    0.75, // Marte
-    1.5, // Júpiter
-    1.2, // Saturno
-    1.05, // Urano
-];
-
+            4.5, // Sol
+            0.6, // Mercurio
+            0.9, // Venus
+            1.05, // Tierra
+            0.75, // Marte
+            1.5, // Júpiter
+            1.2, // Saturno
+            1.05, // Urano
+        ];
 
         let mut spheres = Vec::new();
 
@@ -187,7 +188,7 @@ impl State {
                     label: Some("Pipeline Layout"),
                     bind_group_layouts: &[&uniform_bind_group_layout],
                     push_constant_ranges: &[],
-                })),
+                })),                
                 vertex: wgpu::VertexState {
                     module: &vertex_shader,
                     entry_point: "vs_main",
@@ -203,16 +204,8 @@ impl State {
                     targets: &[Some(wgpu::ColorTargetState {
                         format: config.format,
                         blend: Some(wgpu::BlendState {
-                            color: wgpu::BlendComponent {
-                                src_factor: wgpu::BlendFactor::SrcAlpha,
-                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                                operation: wgpu::BlendOperation::Add,
-                            },
-                            alpha: wgpu::BlendComponent {
-                                src_factor: wgpu::BlendFactor::One,
-                                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                                operation: wgpu::BlendOperation::Add,
-                            },
+                            color: wgpu::BlendComponent::REPLACE,
+                            alpha: wgpu::BlendComponent::REPLACE,
                         }),
                         write_mask: wgpu::ColorWrites::ALL,
                     })],
@@ -279,6 +272,7 @@ impl State {
                 vertex_buffer,
                 index_buffer,
                 num_indices: indices.len() as u32,
+                uniforms,
             });
         }
 
@@ -383,6 +377,7 @@ async fn run() {
     let window = WindowBuilder::new().build(&event_loop).unwrap();
 
     let mut state = State::new(&window).await;
+    let mut current_time: f32 = 0.0;
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
@@ -392,11 +387,22 @@ async fn run() {
                     *control_flow = ControlFlow::Exit;
                 }
             }
+            Event::MainEventsCleared => {
+                current_time += 0.016; // Incrementa ~60 FPS
+                for sphere in &mut state.spheres {
+                    // Escribe el tiempo en el buffer de uniformes (color.a)
+                    let mut uniforms = sphere.uniforms;
+                    uniforms.color[3] = current_time; // Usa color.a para pasar el tiempo
+                    state.queue.write_buffer(
+                        &sphere.uniform_buffer,
+                        0,
+                        bytemuck::cast_slice(&[uniforms]),
+                    );
+                }
+                window.request_redraw();
+            }            
             Event::RedrawRequested(_) => {
                 state.render().unwrap();
-            }
-            Event::MainEventsCleared => {
-                window.request_redraw();
             }
             _ => {}
         }
