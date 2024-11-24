@@ -26,3 +26,9 @@ El programa renderiza los planetas en posiciones fijas en el espacio. La cámara
 ```bash
 cargo run
 ```
+
+## Captura de Pantalla
+
+A continuación, una vista de nuestro planeta animado:
+
+![Captura del Planeta](planeta.png)
