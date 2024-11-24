@@ -368,6 +368,8 @@ fn generate_sphere(stacks: usize, slices: usize) -> (Vec<[f32; 3]>, Vec<u16>) {
     (vertices, indices)
 }
 
+
+
 fn main() {
     pollster::block_on(run());
 }
@@ -378,7 +380,7 @@ async fn run() {
 
     let mut state = State::new(&window).await;
     let mut current_time: f32 = 0.0;
-
+    
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
         match event {
